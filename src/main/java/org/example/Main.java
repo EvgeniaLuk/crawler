@@ -9,7 +9,7 @@ import org.jsoup.select.Elements;
 public class Main {
     private static Logger log = LogManager.getLogger();
     private static TaskController taskController;
-    private static String site = "http://www.procontent.ru/";
+    private static String site = "http://www.procontent.ru/"; // используемый сайт
 
     static public void ParseNews(Document doc) {
         Elements news = doc.getElementsByClass("homepage-news");
