@@ -12,6 +12,7 @@ import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
 import org.jsoup.Jsoup;
 import org.jsoup.nodes.Document;
+import org.jsoup.nodes.Element;
 import org.jsoup.select.Elements;
 
 import java.io.IOException;
@@ -116,4 +117,28 @@ public class TaskController {
         }
         return text;
     }
+
+    public void ParseNews(Document doc, String site) {
+        Elements news = doc.getElementsByClass("homepage-news");
+        for (Element element: news) {
+            try {
+                Element etitle = element.child(0).child(0);
+                String link = site + etitle.attr("href");
+                String text = GetPage(link, etitle.text());
+                log.info(text);
+            } catch (Exception e) {
+                log.error(e);
+            }
+        }
+        return ;
+    }
 }
+
+/*void produce{
+
+
+        }
+
+        void consume {
+
+        }*/
