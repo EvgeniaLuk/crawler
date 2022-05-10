@@ -132,13 +132,21 @@ public class TaskController {
         }
         return ;
     }
-}
 
-/*void produce{
-
-
+    void produce ()  throws InterruptedException{ //+throws InterruptedException, IOException TimeoutException
+        log.info("Produce go");
+        Document doc = getUrl(Main.site);
+        String title;
+        if (doc != null) {
+            title = doc.title();
+            log.info(title);
+            ParseNews(doc, Main.site);
         }
 
-        void consume {
+    }
+    void consume () throws InterruptedException, IOException {
+        log.info("Consume go");
 
-        }*/
+    }
+}
+
