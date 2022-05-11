@@ -130,6 +130,8 @@ public class TaskController {
             log.info("Автор: " + author);
 
             log.info("Ссылка: " + link);
+
+            log.info("\n");
         }
         return text;
     }
