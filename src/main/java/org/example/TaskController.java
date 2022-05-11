@@ -1,5 +1,8 @@
 package org.example;
 
+import com.rabbitmq.client.Channel;
+import com.rabbitmq.client.Connection;
+import com.rabbitmq.client.ConnectionFactory;
 import org.apache.http.HttpEntity;
 import org.apache.http.client.CookieStore;
 import org.apache.http.client.config.RequestConfig;
@@ -16,6 +19,8 @@ import org.jsoup.nodes.Element;
 import org.jsoup.select.Elements;
 
 import java.io.IOException;
+import java.nio.charset.StandardCharsets;
+import java.util.concurrent.TimeoutException;
 
 public class TaskController {
     private static Logger log = LogManager.getLogger();
@@ -26,11 +31,21 @@ public class TaskController {
     private int retryCount = 2;
     private int metadataTimeout = 30 * 1000;
 
+    ConnectionFactory settings;
+
     public TaskController(String _server) {
         CookieStore httpCookieStore = new BasicCookieStore();
         builder = HttpClientBuilder.create().setDefaultCookieStore(httpCookieStore);
         client = builder.build();
         this.server = _server;
+
+
+        settings = new ConnectionFactory();
+        settings.setHost("127.0.0.1");
+        settings.setPort(5672);
+        settings.setVirtualHost("/");
+        settings.setUsername("rabbitmq");
+        settings.setPassword("rabbitmq");
     }
 
     public Document getUrl(String url) {
@@ -98,8 +113,9 @@ public class TaskController {
         return doc;
     }
 
-    public String GetPage(String link, String header) {
+    public String GetPage(String link) {
         Document ndoc = getUrl(link);
+        String header = ndoc.child(0).child(0).text();
         String text = "";
         if (ndoc != null) {
             Elements newsDoc = ndoc.getElementsByClass("news_body");
@@ -118,22 +134,28 @@ public class TaskController {
         return text;
     }
 
-    public void ParseNews(Document doc, String site) {
+    public void ParseNews(Document doc, String site) throws InterruptedException, IOException, TimeoutException {
+        Connection connection = settings.newConnection();
+        Channel channel = connection.createChannel();
+
         Elements news = doc.getElementsByClass("homepage-news");
         for (Element element: news) {
             try {
                 Element etitle = element.child(0).child(0);
                 String link = site + etitle.attr("href");
-                String text = GetPage(link, etitle.text());
-                log.info(text);
+                channel.basicPublish("", Main.QUEUE_NAME, null, link.getBytes());
             } catch (Exception e) {
                 log.error(e);
             }
         }
-        return ;
+        channel.close();
+        connection.close();
+
+        return;
     }
 
-    void produce ()  throws InterruptedException{ //+throws InterruptedException, IOException TimeoutException
+    void produce ()   throws InterruptedException, IOException, TimeoutException{
+
         log.info("Produce go");
         Document doc = getUrl(Main.site);
         String title;
@@ -144,8 +166,28 @@ public class TaskController {
         }
 
     }
-    void consume () throws InterruptedException, IOException {
+    void consume () throws InterruptedException, IOException, TimeoutException {
+        Connection connection = settings.newConnection();
+        Channel channel = connection.createChannel();
+
+
         log.info("Consume go");
+
+        while (true) {
+            synchronized (this) {
+                try {
+                    if (channel.messageCount(Main.QUEUE_NAME) == 0) continue;
+                    String url = new String(channel.basicGet(Main.QUEUE_NAME, true).getBody(), StandardCharsets.UTF_8);
+                    if (url!=null)
+                        GetPage(url);
+                    notify();
+                }
+                catch (IndexOutOfBoundsException e) {
+                    wait();
+                }
+            }
+        }
+
 
     }
 }
