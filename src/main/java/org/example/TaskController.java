@@ -17,10 +17,25 @@ import org.jsoup.Jsoup;
 import org.jsoup.nodes.Document;
 import org.jsoup.nodes.Element;
 import org.jsoup.select.Elements;
-
 import java.io.IOException;
 import java.nio.charset.StandardCharsets;
 import java.util.concurrent.TimeoutException;
+import com.fasterxml.jackson.databind.ObjectWriter;
+import com.fasterxml.jackson.databind.ObjectMapper;
+import org.elasticsearch.action.search.SearchRequest;
+import org.elasticsearch.action.search.SearchResponse;
+import org.elasticsearch.client.Client;
+import org.elasticsearch.common.settings.Settings;
+import org.elasticsearch.common.transport.TransportAddress;
+import org.elasticsearch.common.xcontent.XContentType;
+import org.elasticsearch.search.aggregations.AggregationBuilders;
+import org.elasticsearch.search.aggregations.bucket.terms.Terms;
+import org.elasticsearch.search.aggregations.bucket.terms.TermsAggregationBuilder;
+import org.elasticsearch.search.builder.SearchSourceBuilder;
+import org.elasticsearch.transport.client.PreBuiltTransportClient;
+import java.net.InetAddress;
+import java.net.UnknownHostException;
+import java.util.concurrent.ExecutionException;
 
 public class TaskController {
     private static Logger log = LogManager.getLogger();
@@ -113,11 +128,14 @@ public class TaskController {
         return doc;
     }
 
-    public String GetPage(String link) {
+    public String GetPage(String link) throws IOException, TimeoutException {
         Document ndoc = getUrl(link);
         String header = ndoc.child(0).child(0).text();
         String text = "";
         if (ndoc != null) {
+            Connection connection = settings.newConnection();
+            Channel channel = connection.createChannel();
+
             Elements newsDoc = ndoc.getElementsByClass("news_body");
             log.info("Текст: " + newsDoc.text());
 
@@ -132,7 +150,17 @@ public class TaskController {
             log.info("Ссылка: " + link);
 
             log.info("\n");
+
+            // Оправляем в очередь_2
+            Json json = new Json(header, newsDoc.text(), author, link, time);
+            ObjectWriter ow = new ObjectMapper().writer().withDefaultPrettyPrinter();
+            String json_complete = ow.writeValueAsString(json);
+            channel.basicPublish("", Main.QUEUE_NAME_2, null, json_complete.getBytes());
+
+            channel.close();
+            connection.close();
         }
+
         return text;
     }
 
@@ -145,7 +173,7 @@ public class TaskController {
             try {
                 Element etitle = element.child(0).child(0);
                 String link = site + etitle.attr("href");
-                channel.basicPublish("", Main.QUEUE_NAME, null, link.getBytes());
+                channel.basicPublish("", Main.QUEUE_NAME_1, null, link.getBytes());
             } catch (Exception e) {
                 log.error(e);
             }
@@ -178,8 +206,8 @@ public class TaskController {
         while (true) {
             synchronized (this) {
                 try {
-                    if (channel.messageCount(Main.QUEUE_NAME) == 0) continue;
-                    String url = new String(channel.basicGet(Main.QUEUE_NAME, true).getBody(), StandardCharsets.UTF_8);
+                    if (channel.messageCount(Main.QUEUE_NAME_1) == 0) continue;
+                    String url = new String(channel.basicGet(Main.QUEUE_NAME_1, true).getBody(), StandardCharsets.UTF_8);
                     if (url!=null)
                         GetPage(url);
                     notify();
@@ -189,8 +217,40 @@ public class TaskController {
                 }
             }
         }
+    }
 
+    void send () throws IOException, TimeoutException {
+        while (true){
+            Connection connection = settings.newConnection();
+            Channel channel = connection.createChannel();
 
+            if (channel.messageCount(Main.QUEUE_NAME_2) == 0) continue;
+            String json = new String(channel.basicGet(Main.QUEUE_NAME_2, true).getBody(), StandardCharsets.UTF_8);
+            Client client = new PreBuiltTransportClient(
+                    Settings.builder().put("cluster.name","docker-cluster").build())
+                    .addTransportAddress(new TransportAddress(InetAddress.getByName("localhost"), 9300));
+            String sha256hex = org.apache.commons.codec.digest.DigestUtils.sha256Hex(json);
+            client.prepareIndex("crawler", "_doc", sha256hex).setSource(json, XContentType.JSON).get();
+            channel.close();
+            connection.close();
+        }
+    }
+
+    void request () throws UnknownHostException, ExecutionException, InterruptedException {
+        Client client = new PreBuiltTransportClient(
+                Settings.builder().put("cluster.name","docker-cluster").build())
+                .addTransportAddress(new TransportAddress(InetAddress.getByName("localhost"), 9300));
+
+        TermsAggregationBuilder aggregationBuilder = AggregationBuilders.terms("AUTHOR_count").field("AUTHOR.keyword");
+        SearchSourceBuilder searchSourceBuilder2 = new SearchSourceBuilder().aggregation(aggregationBuilder);
+        SearchRequest searchRequest2 = new SearchRequest().indices("crawler").source(searchSourceBuilder2);
+        SearchResponse searchResponse = client.search(searchRequest2).get();
+        Terms terms = searchResponse.getAggregations().get("AUTHOR_count");
+
+        for (Terms.Bucket bucket : terms.getBuckets())
+            log.info("author=" + bucket.getKey()+" count="+bucket.getDocCount());
+
+        client.close();
     }
 }
 

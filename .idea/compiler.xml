@@ -8,6 +8,7 @@
         <outputRelativeToContentRoot value="true" />
         <module name="Crawler" />
         <module name="2crawler" />
+        <module name="crawler" />
       </profile>
     </annotationProcessing>
   </component>
