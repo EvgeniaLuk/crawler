@@ -96,17 +96,32 @@ public class Main {
             }
         });
 
+        Thread t5 = new Thread(new Runnable() {
+            @Override
+            public void run()
+            {
+                try {
+                    taskController.testing();
+                }
+
+                catch (IOException | ExecutionException | InterruptedException e) {
+                    e.printStackTrace();
+                }
+            }
+        });
         // Start both threads
         t1.start();
         t2.start();
         t3.start();
         t4.start();
+        t5.start();
 
         // t1 finishes before t2
         t1.join();
         t2.join();
         t3.join();
         t4.join();
+        t5.join();
 
         return;
     }

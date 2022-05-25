@@ -1,5 +1,6 @@
 package org.example;
 
+import com.fasterxml.jackson.databind.ObjectWriter;
 import com.rabbitmq.client.Channel;
 import com.rabbitmq.client.Connection;
 import com.rabbitmq.client.ConnectionFactory;
@@ -13,14 +14,17 @@ import org.apache.http.impl.client.CloseableHttpClient;
 import org.apache.http.impl.client.HttpClientBuilder;
 import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
+import org.elasticsearch.search.SearchHit;
 import org.jsoup.Jsoup;
 import org.jsoup.nodes.Document;
 import org.jsoup.nodes.Element;
 import org.jsoup.select.Elements;
 import java.io.IOException;
 import java.nio.charset.StandardCharsets;
+import java.util.ArrayList;
+import java.util.Iterator;
+import java.util.List;
 import java.util.concurrent.TimeoutException;
-import com.fasterxml.jackson.databind.ObjectWriter;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import org.elasticsearch.action.search.SearchRequest;
 import org.elasticsearch.action.search.SearchResponse;
@@ -230,7 +234,7 @@ public class TaskController {
                     Settings.builder().put("cluster.name","docker-cluster").build())
                     .addTransportAddress(new TransportAddress(InetAddress.getByName("localhost"), 9300));
             String sha256hex = org.apache.commons.codec.digest.DigestUtils.sha256Hex(json);
-            client.prepareIndex("crawler", "_doc", sha256hex).setSource(json, XContentType.JSON).get();
+            client.prepareIndex("evgeny", "_doc", sha256hex).setSource(json, XContentType.JSON).get();
             channel.close();
             connection.close();
         }
@@ -243,7 +247,7 @@ public class TaskController {
 
         TermsAggregationBuilder aggregationBuilder = AggregationBuilders.terms("AUTHOR_count").field("AUTHOR.keyword");
         SearchSourceBuilder searchSourceBuilder2 = new SearchSourceBuilder().aggregation(aggregationBuilder);
-        SearchRequest searchRequest2 = new SearchRequest().indices("crawler").source(searchSourceBuilder2);
+        SearchRequest searchRequest2 = new SearchRequest().indices("evgeny").source(searchSourceBuilder2);
         SearchResponse searchResponse = client.search(searchRequest2).get();
         Terms terms = searchResponse.getAggregations().get("AUTHOR_count");
 
@@ -251,6 +255,31 @@ public class TaskController {
             log.info("author=" + bucket.getKey()+" count="+bucket.getDocCount());
 
         client.close();
+    }
+
+    void testing () throws IOException, ExecutionException, InterruptedException {
+        Client client = new PreBuiltTransportClient(
+                Settings.builder().put("cluster.name","docker-cluster").build())
+                .addTransportAddress(new TransportAddress(InetAddress.getByName("localhost"), 9300));
+
+        TermsAggregationBuilder aggregationBuilder = AggregationBuilders.terms("TEXT_count").field("TEXT.keyword");
+        SearchSourceBuilder searchSourceBuilder2 = new SearchSourceBuilder().aggregation(aggregationBuilder);
+        SearchRequest searchRequest2 = new SearchRequest().indices("evgeny").source(searchSourceBuilder2);
+        SearchResponse searchResponse = client.search(searchRequest2).get();
+        Iterator<SearchHit> sHits = searchResponse.getHits().iterator();
+
+        List<String> results = new ArrayList<String>(5);
+
+        for (int i=0; i<2 && sHits.hasNext(); i++) {
+            results.add(sHits.next().getSourceAsString());
+            String json = results.get(i);
+            ObjectMapper objectMapper = new ObjectMapper();
+            Json textJson = objectMapper.readValue(json, Json.class);
+            Analysis.createFile("article" + i, textJson.TEXT);
+        }
+
+        client.close();
+        Analysis.nearDuplicates("article0", "article1");
     }
 }
 

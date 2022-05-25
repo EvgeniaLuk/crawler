@@ -1,12 +1,17 @@
 package org.example;
 
 public class Json {
-    Json(String header, String text, String author, String url, String time) {
-        HEADER=header;
-        TEXT=text;
-        AUTHOR=author;
-        URL=url;
-        TIME=time;
+
+    public Json() {
+        super();
+    }
+
+    public Json(String header, String text, String author, String url, String time) {
+        this.HEADER=header;
+        this.TEXT=text;
+        this.AUTHOR=author;
+        this.URL=url;
+        this.TIME=time;
     }
 
     public String HEADER;
